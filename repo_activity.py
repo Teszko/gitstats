@@ -19,9 +19,12 @@ class Options:
     to_year = 0
     display_months = False
     color = 'blue'
-    bar_width = 27
+    bar_width = 30
+    title = ""
+    ylabel = "Anzahl Wochen mit Aktivität"
     x_labels_padding = 1
     url = ''
+    repo = ''
     log = False
     years = []
 
@@ -29,7 +32,7 @@ class Options:
 def handle_arguments(options):
     parser = argparse.ArgumentParser(
         description='Program to analyze a Git repository\'s commit frequency over a time interval',
-        epilog="     Example call: "+__file__+" Teszko/githubstats -t 2017 --color \'red\'"
+        epilog="     Example call: "+__file__+" Teszko/gitstats -t 2017 --color \'red\'"
         )
     parser.add_argument(
         '--log', '-l',
@@ -45,19 +48,27 @@ def handle_arguments(options):
     parser.add_argument('--to-year', '-t', type=int, default=0)
     parser.add_argument('--bar-width', '-b', type=int, default=options.bar_width)
     parser.add_argument('--color', '-c', default=options.color)
+    parser.add_argument('--title', default='', help='custom title instead of :owner/:repo')
+    parser.add_argument('--ylabel', default='', help='y-axis label')
     parser.add_argument('repo', help='GitHub :owner/:repo pair')
 
     args = parser.parse_args()
 
     options.bar_width = int(args.bar_width)
     options.color = format(args.color)
-    options.url = "https://api.github.com/repos/"+format(args.repo)+"/stats/code_frequency"
+    options.repo = format(args.repo)
+    options.title = options.repo
+    options.ylabel = format(args.ylabel)
+    options.url = "https://api.github.com/repos/"+options.repo+"/stats/code_frequency"
     options.to_year = args.to_year
     options.from_year = args.from_year
     if args.log:
         options.log = True
     if args.display_months:
         options.display_months = True
+    if format(args.title) != '':
+        options.title = format(args.title)
+
 
 
 def date_is_in_group(date, group):
@@ -78,7 +89,9 @@ def plot_bar_graph (options, plot_dates, plot_values):
     interval = math.ceil(interval / digits) * digits
 
     # plt.yticks(range(0, int(max(plot_values) * 1.05), interval))
-    plt.ylabel('Anzahl geänderter Zeilen Code')
+    plt.yticks(range(0, int(max(plot_values) + 2), 1))
+    plt.ylabel(options.ylabel)
+    plt.title(options.title)
     plt.show()
 
 
@@ -110,7 +123,8 @@ def parse_json(data):
 
         changes = int(e[1]) - int(e[2])
         if changes != 0:
-            week_total.append(int(changes))
+            #week_total.append(int(changes))
+            week_total.append(1)
             year_month_pair.append([year, month])
 
     year_month_pair_cleaned = []
