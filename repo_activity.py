@@ -11,6 +11,7 @@ from time import sleep
 
 
 class Options:
+    number_of_graphs = 0
     lower_limit = 2010
     lower_month = 1
     upper_limit = 2017  # will be replaced by first and last commit date
@@ -19,12 +20,11 @@ class Options:
     to_year = 0
     display_months = False
     color = 'blue'
-    bar_width = 30
-    title = ""
-    ylabel = "Anzahl Wochen mit Aktivität"
-    x_labels_padding = 1
+    bar_width = 40
+    ylabel = "Anzahl geänderter Codezeilen"
+    x_labels_padding = 0
     url = ''
-    repo = ''
+    repos = ''
     log = False
     years = []
 
@@ -50,16 +50,16 @@ def handle_arguments(options):
     parser.add_argument('--color', '-c', default=options.color)
     parser.add_argument('--title', default='', help='custom title instead of :owner/:repo')
     parser.add_argument('--ylabel', default='', help='y-axis label')
-    parser.add_argument('repo', help='GitHub :owner/:repo pair')
+    parser.add_argument('repo', help='GitHub :owner/:repo pair', nargs='+')
 
     args = parser.parse_args()
 
     options.bar_width = int(args.bar_width)
     options.color = format(args.color)
-    options.repo = format(args.repo)
-    options.title = options.repo
+    options.repos = args.repo.copy()
+    print(options.repos)
+    options.number_of_graphs = len(args.repo)
     options.ylabel = format(args.ylabel)
-    options.url = "https://api.github.com/repos/"+options.repo+"/stats/code_frequency"
     options.to_year = args.to_year
     options.from_year = args.from_year
     if args.log:
@@ -79,29 +79,14 @@ def date_is_in_group(date, group):
         return -1
 
 
-def plot_bar_graph (options, plot_dates, plot_values):
-    plt.bar(plot_dates, plot_values, options.bar_width, color=options.color, log=options.log)
-    plt.xticks(plot_dates, options.years, rotation='vertical')
-    # plt.xlim([min(plot_dates) - 1, max(plot_dates) + 1])
-
-    interval = math.ceil(max(plot_values) / 10)
-    digits = math.floor(math.pow(10,math.floor(math.log10(interval) + 0)))
-    interval = math.ceil(interval / digits) * digits
-
-    # plt.yticks(range(0, int(max(plot_values) * 1.05), interval))
-    plt.yticks(range(0, int(max(plot_values) + 2), 1))
-    plt.ylabel(options.ylabel)
-    plt.title(options.title)
-    plt.show()
-
-
-def request_data(options):
+def request_data(options, i):
     res_code = 0
     response = ''
 
     while res_code != 200:
         # loop until github is done computing stats.
-        response = urllib.request.urlopen(options.url)
+        url = "https://api.github.com/repos/"+options.repos[i]+"/stats/code_frequency"
+        response = urllib.request.urlopen(url)
         res_code = response.getcode()
 
         if res_code != 200 and res_code != 202:
@@ -123,8 +108,8 @@ def parse_json(data):
 
         changes = int(e[1]) - int(e[2])
         if changes != 0:
-            #week_total.append(int(changes))
-            week_total.append(1)
+            week_total.append(int(changes))
+            # week_total.append(1)
             year_month_pair.append([year, month])
 
     year_month_pair_cleaned = []
@@ -144,14 +129,14 @@ def parse_json(data):
 
 
 def month_year_iter(start_month, start_year, end_month, end_year):
-    ym_start = 12 * start_year + start_month - 2
-    ym_end = (12 * end_year + end_month - 1 - 12)
+    ym_start = 12 * start_year + start_month - 1
+    ym_end = (12 * end_year + end_month)
     for ym in range(ym_start, ym_end):
         y, m = divmod(ym, 12)
         yield y, m+1
 
 
-def prepare_data_for_plot(options, year_month_pairs, month_total):
+def prepare_data_for_plot(options, i, year_month_pairs, month_total):
     if options.from_year:
         options.lower_limit = options.from_year
     else:
@@ -166,23 +151,23 @@ def prepare_data_for_plot(options, year_month_pairs, month_total):
 
     plt_dates = []
     plt_values = []
-    current_year = 0
+    options.years.append([])
 
     if not options.display_months:
-        options.years.extend(['.']*options.x_labels_padding)
+        options.years[i].extend(['.']*options.x_labels_padding)
 
-    for month in month_year_iter(options.lower_month, options.lower_limit, options.upper_month, options.upper_limit):
+    test = list(month_year_iter(options.lower_month, options.lower_limit, options.upper_month, options.upper_limit))
+    for month in test:
         year = int(month[0])
         month = int(month[1])
 
         if not options.display_months:
-            if year != current_year:
-                options.years.append(str(year))
-                current_year = year
+            if month == 1:
+                options.years[i].append(str(year))
             else:
-                options.years.append('')
+                options.years[i].append('')
         else:
-            options.years.append(dt.date(year, month, 1).strftime('%b %y'))
+            options.years[i].append(dt.date(year, month, 1).strftime('%b %y'))
 
         index = date_is_in_group([year, month], year_month_pairs)
         if index != -1:
@@ -193,14 +178,40 @@ def prepare_data_for_plot(options, year_month_pairs, month_total):
         plt_dates.append(dt.datetime(year=year, month=month, day=1))
 
     if not options.display_months:
-        options.years = options.years[:-options.x_labels_padding]
+        options.years[i] = options.years[i][:-(options.x_labels_padding+1)]
+
     return plt_dates, plt_values
+
+
+def plot_bar_graph (options, i, ax, plot_dates, plot_values):
+    ax.bar(plot_dates, plot_values, options.bar_width, color=options.color, log=options.log, edgecolor="none")
+    plt.xticks(plot_dates, options.years[i], rotation='horizontal')
+
+    if not options.log:
+        interval = math.ceil(max(plot_values) / 10)
+        digits = math.floor(math.pow(10, math.floor(math.log10(interval) + 0)))
+        interval = math.ceil(interval / digits) * digits
+        plt.yticks(range(0, int(max(plot_values) * 1.05), interval))
+
+    plt.ylabel(options.ylabel)
+    # plt.title(options.repos[i])
+    ax.set_title(options.repos[i])
 
 
 if __name__ == "__main__":
     options = Options()
     handle_arguments(options)
-    data = request_data(options)
-    year_month_pairs, month_total = parse_json(data)
-    plot_dates, plot_values = prepare_data_for_plot(options, year_month_pairs, month_total)
-    plot_bar_graph(options, plot_dates, plot_values)
+    print(options.number_of_graphs)
+
+    fig, axarr = plt.subplots(1, options.number_of_graphs, figsize=(5 * options.number_of_graphs, 5))
+
+    for i in range(0, options.number_of_graphs):
+        print(options.repos[i])
+        data = request_data(options, i)
+        year_month_pairs, month_total = parse_json(data)
+        plot_dates, plot_values = prepare_data_for_plot(options, i, year_month_pairs, month_total)
+        plot_bar_graph(options, i, axarr[i], plot_dates, plot_values)
+
+
+    fig.savefig('out.png')
+    plt.close(fig)
